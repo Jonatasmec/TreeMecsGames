@@ -1,0 +1,2058 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Padaria & Patos no Parque 3D</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Nunito', sans-serif;
+      background-color: #87ceeb;
+    }
+    h1, h2, h3, .font-display {
+      font-family: 'Fredoka', sans-serif;
+    }
+    #game-canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: crosshair;
+    }
+    .glass-panel {
+      background: rgba(255, 253, 245, 0.90);
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      box-shadow: 0 10px 25px -5px rgba(30, 41, 59, 0.18);
+    }
+    .btn-bouncy {
+      transition: transform 0.14s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.14s ease, background-color 0.15s ease;
+    }
+    .btn-bouncy:hover:not(:disabled) {
+      transform: translateY(-2px) scale(1.03);
+    }
+    .btn-bouncy:active:not(:disabled) {
+      transform: translateY(1px) scale(0.97);
+    }
+    @keyframes floatUpFade {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, 10px) scale(0.5);
+      }
+      18% {
+        opacity: 1;
+        transform: translate(-50%, -8px) scale(1.25);
+      }
+      35% {
+        transform: translate(-50%, -16px) scale(1.0);
+      }
+      80% {
+        opacity: 1;
+        transform: translate(-50%, -44px) scale(1.05);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -62px) scale(0.85);
+      }
+    }
+    .emoji-pop {
+      position: absolute;
+      pointer-events: none;
+      animation: floatUpFade 2.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      z-index: 30;
+    }
+    @keyframes cashPop {
+      0% { opacity: 0; transform: translateY(12px) scale(0.7); }
+      20% { opacity: 1; transform: translateY(-6px) scale(1.15); }
+      80% { opacity: 1; transform: translateY(-20px) scale(1); }
+      100% { opacity: 0; transform: translateY(-34px) scale(0.9); }
+    }
+    .cash-toast {
+      animation: cashPop 1.8s ease-out forwards;
+    }
+    /* Custom scrollbar for shop */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.05);
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(217, 119, 6, 0.4);
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Canvas Principal 3D -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Camada de Emojis Flutuantes e Indicadores 2D Projetados -->
+  <div id="floating-layer" class="fixed inset-0 pointer-events-none overflow-hidden z-20"></div>
+
+  <!-- HUD Superior -->
+  <div class="fixed top-3 left-3 right-3 z-30 flex flex-wrap items-start justify-between gap-2 pointer-events-none">
+    
+    <!-- Painel de Dinheiro e Timer de R$ 50 / 10s -->
+    <div class="glass-panel rounded-2xl px-4 py-2.5 pointer-events-auto flex flex-col gap-1.5 min-w-[235px] sm:min-w-[270px]">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">💰</span>
+          <div>
+            <div class="text-[11px] font-extrabold uppercase tracking-wider text-amber-800/70">Seu Saldo</div>
+            <div id="money-display" class="font-display text-2xl font-bold text-emerald-700 leading-none">R$ 50,00</div>
+          </div>
+        </div>
+        <div id="cash-popup-anchor" class="relative h-6 w-16 flex items-center justify-end"></div>
+      </div>
+      
+      <!-- Barra de Renda Passiva (R$ 50 a cada 10s) -->
+      <div class="w-full">
+        <div class="flex justify-between text-[11px] font-bold text-slate-600 mb-0.5">
+          <span>⏳ Próximo +R$ 50</span>
+          <span id="income-timer-text" class="text-amber-700">10.0s</span>
+        </div>
+        <div class="w-full h-2.5 bg-amber-950/10 rounded-full overflow-hidden p-0.5">
+          <div id="income-progress-bar" class="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-100" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Centro: Status Geral dos Patos do Lago -->
+    <div class="glass-panel rounded-2xl px-4 py-2 pointer-events-auto hidden md:flex items-center gap-4">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">🦆</span>
+        <div>
+          <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Alegria do Lago</div>
+          <div class="flex items-center gap-2">
+            <span id="lake-mood-emoji" class="text-xl">😊</span>
+            <span id="lake-mood-label" class="font-display font-bold text-slate-800 text-base">Patos Tranquilos (55%)</span>
+          </div>
+        </div>
+      </div>
+      <div class="h-8 w-[1px] bg-slate-300/70"></div>
+      <div class="text-xs font-bold text-slate-600">
+        <div>Pães jogados: <span id="breads-thrown-count" class="text-amber-700 font-extrabold">0</span></div>
+        <div>Patos no lago: <span id="duck-count-label" class="text-sky-700 font-extrabold">9</span></div>
+      </div>
+    </div>
+
+    <!-- Direita: Botões de Ação (Padaria, Guia de Patos, Som) -->
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <button id="btn-open-bakery" class="btn-bouncy bg-gradient-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-500 text-amber-950 font-display font-bold px-4 py-2.5 rounded-2xl shadow-lg border-2 border-amber-200 flex items-center gap-2 text-sm sm:text-base cursor-pointer">
+        <span class="text-xl">🥖</span>
+        <span>Padaria <span class="hidden sm:inline text-xs bg-amber-950/15 px-1.5 py-0.5 rounded-md ml-0.5">[B]</span></span>
+      </button>
+
+      <button id="btn-open-ducks" class="btn-bouncy glass-panel hover:bg-white text-slate-800 font-display font-bold px-3.5 py-2.5 rounded-2xl flex items-center gap-1.5 text-sm sm:text-base cursor-pointer" title="Ver Patos e Alegria">
+        <span class="text-xl">📋</span>
+        <span class="hidden sm:inline">Patos</span>
+      </button>
+
+      <button id="btn-toggle-sound" class="btn-bouncy glass-panel hover:bg-white text-slate-800 font-bold p-2.5 rounded-2xl text-lg cursor-pointer" title="Ativar/Silenciar Som">
+        🔊
+      </button>
+    </div>
+  </div>
+
+  <!-- Aviso de Proximidade da Padaria 3D -->
+  <div id="bakery-proximity-prompt" class="fixed top-28 left-1/2 -translate-x-1/2 z-30 hidden pointer-events-auto">
+    <button id="btn-proximity-bakery" class="btn-bouncy bg-amber-500 text-amber-950 font-display font-bold px-5 py-2.5 rounded-full shadow-xl border-2 border-white flex items-center gap-2 animate-bounce cursor-pointer">
+      <span class="text-xl">🏪</span>
+      <span>Entrar na Padaria do Parque [B]</span>
+    </button>
+  </div>
+
+  <!-- Mensagem Rápida de Feedback (Toast) -->
+  <div id="game-message-box" class="fixed top-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none transition-all duration-300 opacity-0 -translate-y-2">
+    <div id="game-message-text" class="bg-slate-900/90 text-white font-bold text-sm px-4 py-2 rounded-full shadow-lg border border-white/20">
+      Mensagem
+    </div>
+  </div>
+
+  <!-- Dica de Controles (Canto Inferior Esquerdo em Desktop) -->
+  <div class="fixed bottom-24 left-3 z-20 hidden lg:block pointer-events-none">
+    <div class="glass-panel rounded-2xl px-3.5 py-2.5 text-xs font-bold text-slate-700 space-y-1">
+      <div class="font-display text-amber-800 text-sm mb-1">🎮 Controles</div>
+      <div><span class="bg-slate-200 px-1.5 py-0.5 rounded text-slate-900">WASD / Setas</span> Andar pelo parque</div>
+      <div><span class="bg-slate-200 px-1.5 py-0.5 rounded text-slate-900">Clique no Lago</span> Jogar pão selecionado</div>
+      <div><span class="bg-slate-200 px-1.5 py-0.5 rounded text-slate-900">Arrastar Mouse</span> Girar câmera</div>
+      <div><span class="bg-slate-200 px-1.5 py-0.5 rounded text-slate-900">1 - 5</span> Trocar tipo de pão | <span class="bg-slate-200 px-1.5 py-0.5 rounded text-slate-900">B</span> Padaria</div>
+    </div>
+  </div>
+
+  <!-- Controles Touch para Mobile / Tablet -->
+  <div id="mobile-controls" class="fixed bottom-24 left-3 right-3 z-20 flex justify-between items-end lg:hidden pointer-events-none">
+    <!-- D-Pad Virtual -->
+    <div class="grid grid-cols-3 gap-1.5 w-32 h-32 pointer-events-auto opacity-85">
+      <div></div>
+      <button data-dir="up" class="mobile-dir-btn bg-white/80 active:bg-amber-300 rounded-xl shadow-md flex items-center justify-center text-xl font-bold border border-white">⬆️</button>
+      <div></div>
+      <button data-dir="left" class="mobile-dir-btn bg-white/80 active:bg-amber-300 rounded-xl shadow-md flex items-center justify-center text-xl font-bold border border-white">⬅️</button>
+      <button data-dir="down" class="mobile-dir-btn bg-white/80 active:bg-amber-300 rounded-xl shadow-md flex items-center justify-center text-xl font-bold border border-white">⬇️</button>
+      <button data-dir="right" class="mobile-dir-btn bg-white/80 active:bg-amber-300 rounded-xl shadow-md flex items-center justify-center text-xl font-bold border border-white">➡️</button>
+    </div>
+
+    <!-- Botão Rápido de Jogar Pão -->
+    <button id="btn-mobile-throw" class="btn-bouncy pointer-events-auto bg-gradient-to-b from-sky-400 to-sky-600 text-white font-display font-bold px-5 py-4 rounded-2xl shadow-xl border-2 border-white flex flex-col items-center gap-0.5">
+      <span class="text-2xl">🥖💦</span>
+      <span class="text-xs">Jogar Pão</span>
+    </button>
+  </div>
+
+  <!-- Barra Inferior (Hotbar de Pães) -->
+  <div class="fixed bottom-3 left-1/2 -translate-x-1/2 z-30 w-full max-w-2xl px-3 pointer-events-none">
+    <div id="bread-hotbar" class="glass-panel rounded-2xl p-1.5 sm:p-2 flex items-center justify-between gap-1.5 sm:gap-2 pointer-events-auto">
+      <!-- Preenchido dinamicamente via JS -->
+    </div>
+  </div>
+
+  <!-- MODAL DA PADARIA ("Padaria do Parque") -->
+  <div id="bakery-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3 sm:p-6">
+    <div class="bg-[#FFFDF7] rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border-4 border-amber-300 overflow-hidden">
+      <!-- Cabeçalho da Padaria -->
+      <div class="bg-gradient-to-r from-amber-500 via-orange-400 to-amber-500 px-5 py-4 flex items-center justify-between text-amber-950">
+        <div class="flex items-center gap-3">
+          <span class="text-4xl bg-white/90 p-2 rounded-2xl shadow-sm">🥐</span>
+          <div>
+            <h2 class="font-display text-2xl font-bold leading-tight">Padaria do Parque</h2>
+            <p class="text-xs sm:text-sm font-bold text-amber-950/80">Escolha os pães para alimentar os patos no lago!</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="bg-white/90 px-3 py-1.5 rounded-xl font-display font-bold text-emerald-700 text-sm sm:text-base shadow-sm">
+            💰 <span id="modal-money-display">R$ 50,00</span>
+          </div>
+          <button id="btn-close-bakery" class="btn-bouncy bg-amber-950/15 hover:bg-amber-950/25 text-amber-950 font-bold w-9 h-9 rounded-xl flex items-center justify-center text-lg cursor-pointer">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista de Pães à Venda -->
+      <div id="bakery-items-list" class="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
+        <!-- Cards dos 5 pães gerados via JS -->
+      </div>
+
+      <!-- Rodapé do Modal -->
+      <div class="bg-amber-50 px-5 py-3 border-t border-amber-200/80 flex items-center justify-between text-xs sm:text-sm font-bold text-amber-900">
+        <span>💡 Dica: Pães melhores deixam os patos eufóricos com emojis raros!</span>
+        <button id="btn-close-bakery-footer" class="btn-bouncy bg-amber-500 text-amber-950 px-4 py-1.5 rounded-xl font-display font-bold cursor-pointer">
+          Voltar ao Lago
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE STATUS DOS PATOS (Enciclopédia / Alegria Individual) -->
+  <div id="ducks-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3 sm:p-6">
+    <div class="bg-[#F8FAFC] rounded-3xl max-w-xl w-full max-h-[88vh] flex flex-col shadow-2xl border-4 border-sky-300 overflow-hidden">
+      <div class="bg-gradient-to-r from-sky-500 to-cyan-500 px-5 py-4 flex items-center justify-between text-white">
+        <div class="flex items-center gap-3">
+          <span class="text-3xl bg-white/20 p-2 rounded-2xl">🦆</span>
+          <div>
+            <h2 class="font-display text-2xl font-bold leading-tight">Patos do Lago</h2>
+            <p class="text-xs sm:text-sm font-semibold text-sky-100">Acompanhe a alegria e o humor de cada pato</p>
+          </div>
+        </div>
+        <button id="btn-close-ducks" class="btn-bouncy bg-white/20 hover:bg-white/30 text-white font-bold w-9 h-9 rounded-xl flex items-center justify-center text-lg cursor-pointer">
+          ✕
+        </button>
+      </div>
+
+      <div id="ducks-status-list" class="p-4 sm:p-5 overflow-y-auto space-y-2.5 flex-1">
+        <!-- Lista gerada dinamicamente -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * PADARIA & PATOS NO PARQUE 3D
+     * Jogo completo em Three.js com economia passiva, padaria 3D, 5 categorias
+     * de pães e patos com inteligência artificial e reações dinâmicas de emojis.
+     * ============================================================================
+     */
+
+    // --------------------------------------------------------------------------
+    // 1. CONFIGURAÇÕES E CATÁLOGO DE PÃES E PATOS
+    // --------------------------------------------------------------------------
+    const BREAD_CATALOG = [
+      {
+        id: 'rotten',
+        key: '1',
+        name: 'Pão Podre',
+        subtitle: 'Mofado, duro e com cheiro terrível',
+        price: 5,
+        happinessDelta: -28,
+        color: 0x5c7a38,
+        crustColor: 0x3b4d23,
+        scale: [0.36, 0.22, 0.24],
+        icon: '🤢',
+        badge: 'Péssimo',
+        badgeColor: 'bg-lime-200 text-lime-900',
+        glow: false,
+        moldy: true
+      },
+      {
+        id: 'stale',
+        key: '2',
+        name: 'Pão Dormido',
+        subtitle: 'De ontem, meio borrachudo e sem graça',
+        price: 15,
+        happinessDelta: 5,
+        color: 0xc2a378,
+        crustColor: 0x9c7b4f,
+        scale: [0.42, 0.24, 0.26],
+        icon: '🥖',
+        badge: 'Comum',
+        badgeColor: 'bg-stone-200 text-stone-800',
+        glow: false,
+        moldy: false
+      },
+      {
+        id: 'french',
+        key: '3',
+        name: 'Pão Francês Quentinho',
+        subtitle: 'Crocante por fora e macio por dentro',
+        price: 35,
+        happinessDelta: 18,
+        color: 0xf5d693,
+        crustColor: 0xd98a2b,
+        scale: [0.48, 0.28, 0.30],
+        icon: '🍞',
+        badge: 'Gostoso',
+        badgeColor: 'bg-amber-200 text-amber-900',
+        glow: false,
+        moldy: false
+      },
+      {
+        id: 'brioche',
+        key: '4',
+        name: 'Brioche Gourmet',
+        subtitle: 'Amanteigado, fofinho e irresistível',
+        price: 80,
+        happinessDelta: 34,
+        color: 0xffdf78,
+        crustColor: 0xe67e22,
+        scale: [0.54, 0.34, 0.36],
+        icon: '🥐',
+        badge: 'Especial',
+        badgeColor: 'bg-orange-200 text-orange-900',
+        glow: true,
+        moldy: false
+      },
+      {
+        id: 'royal',
+        key: '5',
+        name: 'Pão Real Trufado',
+        subtitle: 'Fatia dourada com brilho mágico de chef',
+        price: 200,
+        happinessDelta: 60,
+        color: 0xffe666,
+        crustColor: 0xffaa00,
+        scale: [0.62, 0.38, 0.40],
+        icon: '👑',
+        badge: 'Lendário',
+        badgeColor: 'bg-yellow-300 text-amber-950',
+        glow: true,
+        royal: true
+      }
+    ];
+
+    const DUCK_SPECIES = [
+      {
+        type: 'mallard',
+        speciesName: 'Pato Real',
+        bodyColor: 0x7c5c43,
+        headColor: 0x1b6b3a,
+        beakColor: 0xfacc15,
+        wingColor: 0x5c402c,
+        scale: 1.0,
+        speed: 2.3,
+        pickiness: 1.0,
+        crown: false,
+        crest: false
+      },
+      {
+        type: 'pekin',
+        speciesName: 'Pato Branco',
+        bodyColor: 0xfafaf9,
+        headColor: 0xffffff,
+        beakColor: 0xf97316,
+        wingColor: 0xe7e5e4,
+        scale: 1.08,
+        speed: 2.1,
+        pickiness: 1.0,
+        crown: false,
+        crest: false
+      },
+      {
+        type: 'mandarin',
+        speciesName: 'Pato Mandarim',
+        bodyColor: 0xd97706,
+        headColor: 0x991b1b,
+        beakColor: 0xef4444,
+        wingColor: 0x2563eb,
+        scale: 0.96,
+        speed: 2.55,
+        pickiness: 1.15,
+        crown: false,
+        crest: true
+      },
+      {
+        type: 'golden',
+        speciesName: 'Pato Dourado Real',
+        bodyColor: 0xfbbf24,
+        headColor: 0xf59e0b,
+        beakColor: 0xfef08a,
+        wingColor: 0xd97706,
+        scale: 1.15,
+        speed: 2.4,
+        pickiness: 1.35, // Mais exigente!
+        crown: true,
+        crest: false
+      },
+      {
+        type: 'duckling',
+        speciesName: 'Patinho Bebê',
+        bodyColor: 0xfef08a,
+        headColor: 0xfde047,
+        beakColor: 0xfb923c,
+        wingColor: 0xfacc15,
+        scale: 0.62,
+        speed: 2.75,
+        pickiness: 0.85,
+        crown: false,
+        crest: false
+      }
+    ];
+
+    const DUCK_NAMES = [
+      'Quackson', 'Patinho Feio', 'Sr. Penas', 'Bico Doce',
+      'Imperador Ganso', 'Pipoca', 'Nugget', 'Dom Quack', 'Amarelinho'
+    ];
+
+    // --------------------------------------------------------------------------
+    // 2. ESTADO GLOBAL DO JOGO
+    // --------------------------------------------------------------------------
+    const gameState = {
+      money: 50,
+      incomeInterval: 10.0, // Ganha R$ 50 a cada 10 segundos
+      incomeTimer: 0,
+      incomeAmount: 50,
+      selectedBreadId: 'french',
+      inventory: {
+        rotten: 2,
+        stale: 2,
+        french: 3,
+        brioche: 0,
+        royal: 0
+      },
+      breadsThrown: 0,
+      soundEnabled: true,
+      isModalOpen: false,
+      nearBakery: false
+    };
+
+    // --------------------------------------------------------------------------
+    // 3. SISTEMA DE ÁUDIO SINTETIZADO (WEB AUDIO API)
+    // --------------------------------------------------------------------------
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playTone(freq, type, duration, gainVal = 0.12, slideTo = null) {
+        if (!gameState.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, now);
+        if (slideTo) {
+          osc.frequency.exponentialRampToValueAtTime(slideTo, now + duration);
+        }
+
+        gain.gain.setValueAtTime(gainVal, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + duration);
+      }
+
+      playThrow() {
+        this.playTone(260, 'sine', 0.16, 0.1, 520);
+      }
+
+      playSplash() {
+        this.playTone(190, 'triangle', 0.25, 0.14, 75);
+        setTimeout(() => this.playTone(320, 'sine', 0.15, 0.08, 140), 45);
+      }
+
+      playQuack(happyLevel = 50) {
+        if (!gameState.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        // Quack duplo estilizado
+        const baseFreq = happyLevel > 75 ? 420 : (happyLevel < 30 ? 220 : 320);
+        this.playTone(baseFreq, 'sawtooth', 0.11, 0.07, baseFreq * 0.78);
+        setTimeout(() => {
+          this.playTone(baseFreq * 1.08, 'sawtooth', 0.14, 0.07, baseFreq * 0.72);
+        }, 120);
+      }
+
+      playDisgust() {
+        this.playTone(150, 'sawtooth', 0.35, 0.11, 85);
+      }
+
+      playEuphoria() {
+        this.playTone(523.25, 'sine', 0.15, 0.12);
+        setTimeout(() => this.playTone(659.25, 'sine', 0.15, 0.12), 90);
+        setTimeout(() => this.playTone(783.99, 'sine', 0.25, 0.14), 180);
+      }
+
+      playCash() {
+        this.playTone(880, 'sine', 0.12, 0.11);
+        setTimeout(() => this.playTone(1174.66, 'sine', 0.22, 0.13), 85);
+      }
+    }
+
+    const sounds = new SoundEngine();
+
+    // --------------------------------------------------------------------------
+    // 4. CONFIGURAÇÃO DA CENA THREE.JS, ILUMINAÇÃO E CÂMERA
+    // --------------------------------------------------------------------------
+    const canvas = document.getElementById('game-canvas');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x8fd3f4);
+    scene.fog = new THREE.FogExp2(0x9be0f7, 0.011);
+
+    const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 220);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // Luzes
+    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x4d7c0f, 0.78);
+    hemiLight.position.set(0, 40, 0);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff7ed, 1.05);
+    sunLight.position.set(28, 42, 22);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 5;
+    sunLight.shadow.camera.far = 110;
+    const d = 38;
+    sunLight.shadow.camera.left = -d;
+    sunLight.shadow.camera.right = d;
+    sunLight.shadow.camera.top = d;
+    sunLight.shadow.camera.bottom = -d;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+
+    // --------------------------------------------------------------------------
+    // 5. CONSTRUÇÃO DO PARQUE, LAGO, PIER E PADARIA 3D
+    // --------------------------------------------------------------------------
+    const LAKE_CENTER = new THREE.Vector3(0, 0, -10);
+    const LAKE_RADIUS_X = 18.5;
+    const LAKE_RADIUS_Z = 14.5;
+    const WATER_Y = -0.15;
+
+    const worldObjects = {
+      waterMesh: null,
+      bakeryPos: new THREE.Vector3(-14.5, 0, 12.5),
+      ripples: [],
+      clouds: [],
+      trees: []
+    };
+
+    function buildEnvironment() {
+      // Gramado amplo do parque
+      const grassGeo = new THREE.CircleGeometry(95, 64);
+      const grassMat = new THREE.MeshStandardMaterial({
+        color: 0x65a30d,
+        roughness: 0.9,
+        metalness: 0.0
+      });
+      const grass = new THREE.Mesh(grassGeo, grassMat);
+      grass.rotation.x = -Math.PI / 2;
+      grass.receiveShadow = true;
+      scene.add(grass);
+
+      // Leito de areia / margem suave ao redor do lago
+      const shoreGeo = new THREE.CircleGeometry(1, 48);
+      const shoreMat = new THREE.MeshStandardMaterial({ color: 0xd6c39c, roughness: 0.95 });
+      const shore = new THREE.Mesh(shoreGeo, shoreMat);
+      shore.scale.set(LAKE_RADIUS_X + 1.4, LAKE_RADIUS_Z + 1.4, 1);
+      shore.rotation.x = -Math.PI / 2;
+      shore.position.set(LAKE_CENTER.x, 0.01, LAKE_CENTER.z);
+      shore.receiveShadow = true;
+      scene.add(shore);
+
+      // Água do Lago
+      const waterGeo = new THREE.CircleGeometry(1, 64);
+      const waterMat = new THREE.MeshStandardMaterial({
+        color: 0x0ea5e9,
+        emissive: 0x0369a1,
+        emissiveIntensity: 0.22,
+        roughness: 0.18,
+        metalness: 0.25,
+        transparent: true,
+        opacity: 0.92
+      });
+      const water = new THREE.Mesh(waterGeo, waterMat);
+      water.scale.set(LAKE_RADIUS_X, LAKE_RADIUS_Z, 1);
+      water.rotation.x = -Math.PI / 2;
+      water.position.set(LAKE_CENTER.x, 0.03, LAKE_CENTER.z);
+      water.receiveShadow = true;
+      scene.add(water);
+      worldObjects.waterMesh = water;
+
+      // Caminho de pedras ligando a Padaria ao Píer do Lago
+      const pathMat = new THREE.MeshStandardMaterial({ color: 0xe7e5e4, roughness: 0.85 });
+      const pathPoints = [
+        [-13, 11], [-10, 9.5], [-7, 8], [-4, 6.8], [-1.5, 5.8], [0, 5.0],
+        [-14, 14.5], [-11, 14.5], [-8, 14]
+      ];
+      pathPoints.forEach(([px, pz], i) => {
+        const stone = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.45, 0.08, 12), pathMat);
+        stone.position.set(px, 0.04, pz);
+        stone.receiveShadow = true;
+        scene.add(stone);
+      });
+
+      // Píer de Madeira sobre a beira do lago
+      buildWoodenPier();
+
+      // Padaria 3D ("Padaria do Parque")
+      buildBakery3D();
+
+      // Árvores estilizadas, arbustos, pedras e bancos pelo parque
+      buildParkDecorations();
+
+      // Nuvens fofas no céu
+      buildClouds();
+    }
+
+    function buildWoodenPier() {
+      const pierGroup = new THREE.Group();
+      pierGroup.position.set(0, 0.18, 3.8);
+
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 });
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
+
+      // Tábuas do píer avançando sobre a água
+      for (let i = 0; i < 9; i++) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 0.55), woodMat);
+        plank.position.set(0, 0.12, -i * 0.65);
+        plank.castShadow = true;
+        plank.receiveShadow = true;
+        pierGroup.add(plank);
+      }
+
+      // Estacas laterais e corda decorativa
+      const postPositions = [
+        [-1.55, 0], [1.55, 0],
+        [-1.55, -2.6], [1.55, -2.6],
+        [-1.55, -5.2], [1.55, -5.2]
+      ];
+      postPositions.forEach(([x, z]) => {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.15, 10), postMat);
+        post.position.set(x, 0.35, z);
+        post.castShadow = true;
+        pierGroup.add(post);
+      });
+
+      scene.add(pierGroup);
+    }
+
+    function buildBakery3D() {
+      const bakery = new THREE.Group();
+      bakery.position.copy(worldObjects.bakeryPos);
+      bakery.rotation.y = Math.PI * 0.22;
+
+      // Base / Calçada
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(7.2, 0.25, 6.0),
+        new THREE.MeshStandardMaterial({ color: 0xd6d3d1, roughness: 0.8 })
+      );
+      base.position.y = 0.12;
+      base.receiveShadow = true;
+      bakery.add(base);
+
+      // Paredes principais creme aconchegante
+      const walls = new THREE.Mesh(
+        new THREE.BoxGeometry(6.2, 3.8, 4.8),
+        new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.75 })
+      );
+      walls.position.y = 2.1;
+      walls.castShadow = true;
+      walls.receiveShadow = true;
+      bakery.add(walls);
+
+      // Telhado inclinado estilo chalé de padaria
+      const roofGeo = new THREE.ConeGeometry(4.9, 2.2, 4);
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.7 });
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.position.y = 5.05;
+      roof.rotation.y = Math.PI / 4;
+      roof.castShadow = true;
+      bakery.add(roof);
+
+      // Chaminé soltando charme
+      const chimney = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 1.5, 0.7),
+        new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.85 })
+      );
+      chimney.position.set(1.8, 5.2, -1.0);
+      chimney.castShadow = true;
+      bakery.add(chimney);
+
+      // Toldo listrado frontal (Laranja e Branco)
+      for (let i = -3; i <= 3; i++) {
+        const stripeMat = new THREE.MeshStandardMaterial({
+          color: Math.abs(i) % 2 === 0 ? 0xf97316 : 0xffffff,
+          roughness: 0.6
+        });
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.14, 1.65), stripeMat);
+        stripe.position.set(i * 0.76, 2.95, 2.95);
+        stripe.rotation.x = 0.32;
+        stripe.castShadow = true;
+        bakery.add(stripe);
+      }
+
+      // Vitrine iluminada com pães dentro
+      const windowGlass = new THREE.Mesh(
+        new THREE.BoxGeometry(3.6, 1.4, 0.15),
+        new THREE.MeshStandardMaterial({
+          color: 0xfde047,
+          emissive: 0xf59e0b,
+          emissiveIntensity: 0.55,
+          roughness: 0.2
+        })
+      );
+      windowGlass.position.set(-0.6, 1.75, 2.42);
+      bakery.add(windowGlass);
+
+      // Balcão externo com pãezinhos em exposição
+      const counter = new THREE.Mesh(
+        new THREE.BoxGeometry(3.8, 0.95, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 })
+      );
+      counter.position.set(-0.6, 0.7, 2.85);
+      counter.castShadow = true;
+      bakery.add(counter);
+
+      // Pães decorativos no balcão
+      const displayBreadMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.5 });
+      for (let b = -1.2; b <= 0.2; b += 0.7) {
+        const loaf = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), displayBreadMat);
+        loaf.scale.set(1.4, 0.75, 0.9);
+        loaf.position.set(b, 1.28, 2.85);
+        bakery.add(loaf);
+      }
+
+      // Porta de madeira
+      const door = new THREE.Mesh(
+        new THREE.BoxGeometry(1.15, 2.2, 0.18),
+        new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.7 })
+      );
+      door.position.set(2.0, 1.35, 2.42);
+      bakery.add(door);
+
+      // Placa no topo da padaria
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 512;
+      signCanvas.height = 128;
+      const sctx = signCanvas.getContext('2d');
+      sctx.fillStyle = '#78350f';
+      sctx.fillRect(0, 0, 512, 128);
+      sctx.strokeStyle = '#fbbf24';
+      sctx.lineWidth = 10;
+      sctx.strokeRect(8, 8, 496, 112);
+      sctx.fillStyle = '#fef3c7';
+      sctx.font = 'bold 46px sans-serif';
+      sctx.textAlign = 'center';
+      sctx.textBaseline = 'middle';
+      sctx.fillText('🥐 PADARIA DO PARQUE', 256, 66);
+
+      const signTex = new THREE.CanvasTexture(signCanvas);
+      const signMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(4.2, 1.0, 0.22),
+        new THREE.MeshStandardMaterial({ map: signTex })
+      );
+      signMesh.position.set(0, 3.75, 2.55);
+      bakery.add(signMesh);
+
+      // Círculo brilhante no chão indicando área de interação
+      const ringGeo = new THREE.RingGeometry(1.3, 1.65, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xfbbf24,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.75
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(0, 0.27, 4.3);
+      bakery.add(ring);
+
+      scene.add(bakery);
+    }
+
+    function createTree(x, z, scale = 1) {
+      const tree = new THREE.Group();
+      tree.position.set(x, 0, z);
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.32 * scale, 0.48 * scale, 2.6 * scale, 10),
+        new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 })
+      );
+      trunk.position.y = 1.3 * scale;
+      trunk.castShadow = true;
+      trunk.receiveShadow = true;
+      tree.add(trunk);
+
+      const foliageColors = [0x4d7c0f, 0x65a30d, 0x3f6212];
+      const tiers = [
+        { y: 3.1, r: 2.1 },
+        { y: 4.4, r: 1.65 },
+        { y: 5.5, r: 1.1 }
+      ];
+      tiers.forEach((t, idx) => {
+        const crown = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(t.r * scale, 1),
+          new THREE.MeshStandardMaterial({
+            color: foliageColors[idx % foliageColors.length],
+            roughness: 0.85
+          })
+        );
+        crown.position.y = t.y * scale;
+        crown.castShadow = true;
+        crown.receiveShadow = true;
+        tree.add(crown);
+      });
+
+      scene.add(tree);
+      worldObjects.trees.push({ x, z, radius: 1.1 * scale });
+    }
+
+    function createBench(x, z, rotY) {
+      const bench = new THREE.Group();
+      bench.position.set(x, 0, z);
+      bench.rotation.y = rotY;
+
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.75 });
+      const ironMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
+
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.14, 0.75), woodMat);
+      seat.position.y = 0.55;
+      seat.castShadow = true;
+      bench.add(seat);
+
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.65, 0.12), woodMat);
+      back.position.set(0, 0.95, -0.32);
+      back.rotation.x = -0.18;
+      back.castShadow = true;
+      bench.add(back);
+
+      [-0.95, 0.95].forEach(lx => {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.7), ironMat);
+        leg.position.set(lx, 0.275, 0);
+        bench.add(leg);
+      });
+
+      scene.add(bench);
+    }
+
+    function buildParkDecorations() {
+      const treeCoords = [
+        [-22, 6, 1.15], [-24, -8, 1.3], [-19, -22, 1.1],
+        [20, 7, 1.2], [23, -6, 1.25], [18, -21, 1.05],
+        [-7, -28, 1.3], [8, -27, 1.15], [13, 15, 1.1],
+        [-22, 19, 1.2], [6, 18, 1.0]
+      ];
+      treeCoords.forEach(([x, z, s]) => createTree(x, z, s));
+
+      // Bancos virados para o lago
+      createBench(-6.5, 6.2, Math.PI * 0.12);
+      createBench(6.8, 6.0, -Math.PI * 0.14);
+      createBench(15.5, 1.5, -Math.PI * 0.42);
+
+      // Pedras e arbustos na borda do lago
+      const rockMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.9 });
+      const bushMat = new THREE.MeshStandardMaterial({ color: 0x4d7c0f, roughness: 0.85 });
+      for (let i = 0; i < 18; i++) {
+        const angle = (i / 18) * Math.PI * 2;
+        // Evita bloquear o píer (ângulo ~ PI/2)
+        if (Math.abs(angle - Math.PI / 2) < 0.35) continue;
+        const rx = LAKE_CENTER.x + Math.cos(angle) * (LAKE_RADIUS_X + 0.9);
+        const rz = LAKE_CENTER.z + Math.sin(angle) * (LAKE_RADIUS_Z + 0.9);
+
+        if (i % 2 === 0) {
+          const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55 + (i % 3) * 0.2, 0), rockMat);
+          rock.position.set(rx, 0.25, rz);
+          rock.castShadow = true;
+          scene.add(rock);
+        } else {
+          const bush = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 8), bushMat);
+          bush.position.set(rx, 0.45, rz);
+          bush.castShadow = true;
+          scene.add(bush);
+        }
+      }
+    }
+
+    function buildClouds() {
+      const cloudMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.95,
+        flatShading: true
+      });
+      for (let i = 0; i < 8; i++) {
+        const cloud = new THREE.Group();
+        const puffs = 3 + (i % 3);
+        for (let p = 0; p < puffs; p++) {
+          const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(1.8 + (p % 2) * 0.8, 1), cloudMat);
+          mesh.position.set(p * 1.9, (p % 2) * 0.5, (p % 3) * 0.6);
+          cloud.add(mesh);
+        }
+        cloud.position.set(-45 + i * 14, 24 + (i % 3) * 3, -35 - (i % 4) * 8);
+        scene.add(cloud);
+        worldObjects.clouds.push(cloud);
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 6. PERSONAGEM DO JOGADOR E CÂMERA EM TERCEIRA PESSOA
+    // --------------------------------------------------------------------------
+    const player = {
+      mesh: null,
+      rightArm: null,
+      leftLeg: null,
+      rightLeg: null,
+      position: new THREE.Vector3(0, 0.32, 3.2), // Começa perto do píer
+      rotationY: Math.PI,
+      speed: 7.2,
+      throwAnimTimer: 0,
+      walkCycle: 0
+    };
+
+    function buildPlayer() {
+      const group = new THREE.Group();
+      group.position.copy(player.position);
+
+      // Pernas
+      const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.8 });
+      const legGeo = new THREE.BoxGeometry(0.24, 0.65, 0.24);
+      const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+      leftLeg.position.set(-0.17, 0.325, 0);
+      leftLeg.castShadow = true;
+      group.add(leftLeg);
+
+      const rightLeg = new THREE.Mesh(legGeo, pantsMat);
+      rightLeg.position.set(0.17, 0.325, 0);
+      rightLeg.castShadow = true;
+      group.add(rightLeg);
+
+      // Tronco (Camiseta estilosa)
+      const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.7 });
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.78, 0.38), shirtMat);
+      torso.position.y = 1.02;
+      torso.castShadow = true;
+      group.add(torso);
+
+      // Cabeça
+      const skinMat = new THREE.MeshStandardMaterial({ color: 0xfed7aa, roughness: 0.6 });
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.54, 0.54), skinMat);
+      head.position.y = 1.72;
+      head.castShadow = true;
+      group.add(head);
+
+      // Chapéu / Boné de padeiro-visitante
+      const capMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.32, 0.26, 12), capMat);
+      cap.position.y = 2.06;
+      cap.castShadow = true;
+      group.add(cap);
+
+      // Braços
+      const armGeo = new THREE.BoxGeometry(0.2, 0.65, 0.2);
+      const leftArm = new THREE.Mesh(armGeo, skinMat);
+      leftArm.position.set(-0.46, 1.04, 0);
+      leftArm.castShadow = true;
+      group.add(leftArm);
+
+      const rightArm = new THREE.Mesh(armGeo, skinMat);
+      rightArm.position.set(0.46, 1.04, 0);
+      rightArm.castShadow = true;
+      group.add(rightArm);
+
+      scene.add(group);
+      player.mesh = group;
+      player.rightArm = rightArm;
+      player.leftLeg = leftLeg;
+      player.rightLeg = rightLeg;
+    }
+
+    // Controle orbital da câmera ao redor do jogador
+    const camState = {
+      yaw: 0,
+      pitch: 0.42,
+      distance: 10.5,
+      isDragging: false,
+      lastX: 0,
+      lastY: 0,
+      dragMoved: false
+    };
+
+    function updateCamera(dt) {
+      const targetPos = player.position.clone().add(new THREE.Vector3(0, 1.45, 0));
+      const offsetX = Math.sin(camState.yaw) * Math.cos(camState.pitch) * camState.distance;
+      const offsetY = Math.sin(camState.pitch) * camState.distance;
+      const offsetZ = Math.cos(camState.yaw) * Math.cos(camState.pitch) * camState.distance;
+
+      const desiredCamPos = targetPos.clone().add(new THREE.Vector3(offsetX, offsetY, offsetZ));
+      desiredCamPos.y = Math.max(1.4, desiredCamPos.y);
+
+      camera.position.lerp(desiredCamPos, Math.min(1, dt * 12));
+      camera.lookAt(targetPos);
+    }
+
+    // --------------------------------------------------------------------------
+    // 7. PATOS 3D PROCEDURAIS & SISTEMA DE ALEGRIA / EMOJIS
+    // --------------------------------------------------------------------------
+    const ducks = [];
+
+    function createDuckMesh(spec) {
+      const root = new THREE.Group();
+      const s = spec.scale;
+
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: spec.bodyColor,
+        roughness: spec.type === 'golden' ? 0.25 : 0.65,
+        metalness: spec.type === 'golden' ? 0.65 : 0.05
+      });
+      const headMat = new THREE.MeshStandardMaterial({
+        color: spec.headColor,
+        roughness: spec.type === 'golden' ? 0.25 : 0.6,
+        metalness: spec.type === 'golden' ? 0.65 : 0.05
+      });
+      const beakMat = new THREE.MeshStandardMaterial({ color: spec.beakColor, roughness: 0.4 });
+      const wingMat = new THREE.MeshStandardMaterial({
+        color: spec.wingColor,
+        roughness: 0.65,
+        metalness: spec.type === 'golden' ? 0.5 : 0.05
+      });
+
+      // Corpo
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.55 * s, 16, 14), bodyMat);
+      body.scale.set(0.9, 0.78, 1.35);
+      body.position.y = 0.28 * s;
+      body.castShadow = true;
+      root.add(body);
+
+      // Rabinho arrebitado
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.22 * s, 0.45 * s, 8), bodyMat);
+      tail.position.set(0, 0.45 * s, -0.72 * s);
+      tail.rotation.x = -0.8;
+      root.add(tail);
+
+      // Asas laterais
+      const leftWing = new THREE.Mesh(new THREE.SphereGeometry(0.32 * s, 12, 10), wingMat);
+      leftWing.scale.set(0.35, 0.75, 1.35);
+      leftWing.position.set(-0.46 * s, 0.34 * s, -0.05 * s);
+      root.add(leftWing);
+
+      const rightWing = new THREE.Mesh(new THREE.SphereGeometry(0.32 * s, 12, 10), wingMat);
+      rightWing.scale.set(0.35, 0.75, 1.35);
+      rightWing.position.set(0.46 * s, 0.34 * s, -0.05 * s);
+      root.add(rightWing);
+
+      // Cabeça
+      const headGroup = new THREE.Group();
+      headGroup.position.set(0, 0.68 * s, 0.48 * s);
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.34 * s, 14, 12), headMat);
+      head.castShadow = true;
+      headGroup.add(head);
+
+      // Bico
+      const beak = new THREE.Mesh(new THREE.BoxGeometry(0.24 * s, 0.11 * s, 0.36 * s), beakMat);
+      beak.position.set(0, -0.04 * s, 0.34 * s);
+      headGroup.add(beak);
+
+      // Olhinhos brilhantes
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
+      [-0.22 * s, 0.22 * s].forEach(ex => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055 * s, 8, 8), eyeMat);
+        eye.position.set(ex, 0.08 * s, 0.22 * s);
+        headGroup.add(eye);
+      });
+
+      // Topete (Pato Mandarim)
+      if (spec.crest) {
+        const crest = new THREE.Mesh(
+          new THREE.ConeGeometry(0.18 * s, 0.42 * s, 8),
+          new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 })
+        );
+        crest.position.set(0, 0.32 * s, -0.12 * s);
+        crest.rotation.x = -0.6;
+        headGroup.add(crest);
+      }
+
+      // Coroa Real (Pato Dourado)
+      if (spec.crown) {
+        const crown = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.18 * s, 0.14 * s, 0.18 * s, 6),
+          new THREE.MeshStandardMaterial({ color: 0xffe600, emissive: 0xd97706, emissiveIntensity: 0.4 })
+        );
+        crown.position.set(0, 0.37 * s, 0);
+        headGroup.add(crown);
+      }
+
+      root.add(headGroup);
+      return { root, headGroup, leftWing, rightWing };
+    }
+
+    function spawnDucks() {
+      const roster = [
+        DUCK_SPECIES[0], // Mallard
+        DUCK_SPECIES[0], // Mallard
+        DUCK_SPECIES[1], // Pekin
+        DUCK_SPECIES[1], // Pekin
+        DUCK_SPECIES[2], // Mandarin
+        DUCK_SPECIES[2], // Mandarin
+        DUCK_SPECIES[3], // Golden Duck
+        DUCK_SPECIES[4], // Duckling
+        DUCK_SPECIES[4]  // Duckling
+      ];
+
+      roster.forEach((spec, idx) => {
+        const angle = (idx / roster.length) * Math.PI * 2;
+        const dist = 3.5 + (idx % 3) * 3.4;
+        const pos = new THREE.Vector3(
+          LAKE_CENTER.x + Math.cos(angle) * dist,
+          0.03,
+          LAKE_CENTER.z + Math.sin(angle) * dist * 0.78
+        );
+
+        const built = createDuckMesh(spec);
+        built.root.position.copy(pos);
+        scene.add(built.root);
+
+        ducks.push({
+          id: idx,
+          name: DUCK_NAMES[idx % DUCK_NAMES.length],
+          spec,
+          mesh: built.root,
+          headGroup: built.headGroup,
+          leftWing: built.leftWing,
+          rightWing: built.rightWing,
+          position: pos,
+          targetPos: pos.clone(),
+          happiness: 50 + (idx % 3) * 8, // 0 a 100
+          bobOffset: Math.random() * Math.PI * 2,
+          wanderTimer: Math.random() * 3,
+          targetBread: null,
+          excitedTimer: 0
+        });
+      });
+    }
+
+    /**
+     * Escolhe o emoji exato com base na alegria atual do pato (0-100)
+     * e na qualidade do pão que ele acabou de comer!
+     */
+    function getDuckReactionEmoji(happiness, breadItem) {
+      if (breadItem && breadItem.id === 'rotten') {
+        const badEmojis = ['🤢', '🤮', '😡', '💢', '💀'];
+        return badEmojis[Math.floor(Math.random() * badEmojis.length)];
+      }
+      if (happiness <= 20) {
+        return ['😡', '🤢', '😤', '💢'][Math.floor(Math.random() * 4)];
+      }
+      if (happiness <= 42) {
+        return ['😐', '😒', '🙄', '🦆'][Math.floor(Math.random() * 4)];
+      }
+      if (happiness <= 68) {
+        return ['😊', '😋', '🙂', '👏'][Math.floor(Math.random() * 4)];
+      }
+      if (happiness <= 88) {
+        return ['😍', '🥰', '😄', '✨'][Math.floor(Math.random() * 4)];
+      }
+      // Euforia máxima (> 88)
+      return ['🤯', '👑', '💖', '🥳', '🤩'][Math.floor(Math.random() * 5)];
+    }
+
+    function getMoodDescriptor(happiness) {
+      if (happiness <= 20) return { emoji: '🤢', label: 'Enjoado / Bravo', color: 'text-red-600' };
+      if (happiness <= 42) return { emoji: '😐', label: 'Desconfiado', color: 'text-slate-600' };
+      if (happiness <= 68) return { emoji: '😊', label: 'Contente', color: 'text-sky-600' };
+      if (happiness <= 88) return { emoji: '😍', label: 'Apaixonado', color: 'text-amber-600' };
+      return { emoji: '🥳', label: 'Eufórico!', color: 'text-emerald-600' };
+    }
+
+    function spawnFloatingEmoji(worldPos, emoji, subtext = '') {
+      const layer = document.getElementById('floating-layer');
+      const projected = worldPos.clone().add(new THREE.Vector3(0, 1.45, 0)).project(camera);
+
+      // Verifica se está na frente da câmera
+      if (projected.z > 1) return;
+
+      const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+
+      const el = document.createElement('div');
+      el.className = 'emoji-pop flex flex-col items-center';
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.innerHTML = `
+        <span class="text-4xl sm:text-5xl leading-none">${emoji}</span>
+        ${subtext ? `<span class="text-[11px] font-extrabold bg-white/90 text-slate-900 px-2 py-0.5 rounded-full shadow mt-1">${subtext}</span>` : ''}
+      `;
+      layer.appendChild(el);
+
+      setTimeout(() => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 2100);
+    }
+
+    // --------------------------------------------------------------------------
+    // 8. ARREMESSO DE PÃES, ONDAS NA ÁGUA E FÍSICA PARABÓLICA
+    // --------------------------------------------------------------------------
+    const activeBreads = []; // Pães voando ou flutuando no lago
+    const waterRipples = [];
+
+    function createBread3DMesh(breadItem) {
+      const group = new THREE.Group();
+      const [sx, sy, sz] = breadItem.scale;
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: breadItem.color,
+        roughness: breadItem.royal ? 0.25 : 0.75,
+        metalness: breadItem.royal ? 0.5 : 0.0,
+        emissive: breadItem.glow ? breadItem.crustColor : 0x000000,
+        emissiveIntensity: breadItem.glow ? 0.35 : 0
+      });
+
+      const loaf = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10), mat);
+      loaf.scale.set(sx * 2, sy * 2, sz * 2);
+      loaf.castShadow = true;
+      group.add(loaf);
+
+      if (breadItem.moldy) {
+        // Pontos de mofo verde escuro
+        const moldMat = new THREE.MeshBasicMaterial({ color: 0x1a2e05 });
+        for (let i = 0; i < 4; i++) {
+          const dot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), moldMat);
+          dot.position.set((i - 1.5) * 0.12, 0.12, (i % 2 === 0 ? 0.1 : -0.1));
+          group.add(dot);
+        }
+      }
+
+      scene.add(group);
+      return group;
+    }
+
+    function spawnWaterRipple(pos, color = 0xffffff, maxScale = 3.2) {
+      const ringGeo = new THREE.RingGeometry(0.2, 0.32, 24);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85
+      });
+      const mesh = new THREE.Mesh(ringGeo, ringMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(pos.x, 0.05, pos.z);
+      scene.add(mesh);
+
+      waterRipples.push({
+        mesh,
+        age: 0,
+        duration: 1.1,
+        maxScale
+      });
+    }
+
+    function isPointInsideLake(x, z) {
+      const dx = (x - LAKE_CENTER.x) / (LAKE_RADIUS_X - 0.8);
+      const dz = (z - LAKE_CENTER.z) / (LAKE_RADIUS_Z - 0.8);
+      return (dx * dx + dz * dz) <= 1.0;
+    }
+
+    function clampPointToLake(x, z) {
+      const dx = (x - LAKE_CENTER.x) / (LAKE_RADIUS_X - 1.2);
+      const dz = (z - LAKE_CENTER.z) / (LAKE_RADIUS_Z - 1.2);
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist <= 1.0) return new THREE.Vector3(x, 0.05, z);
+      return new THREE.Vector3(
+        LAKE_CENTER.x + (dx / dist) * (LAKE_RADIUS_X - 1.2),
+        0.05,
+        LAKE_CENTER.z + (dz / dist) * (LAKE_RADIUS_Z - 1.2)
+      );
+    }
+
+    function throwBreadAt(targetPoint = null) {
+      if (gameState.isModalOpen) return;
+
+      const breadItem = BREAD_CATALOG.find(b => b.id === gameState.selectedBreadId);
+      if (!breadItem) return;
+
+      const stock = gameState.inventory[breadItem.id] || 0;
+      if (stock <= 0) {
+        showGameMessage(`Você está sem ${breadItem.name}! Abra a Padaria [B] para comprar.`);
+        return;
+      }
+
+      // Define o alvo no lago
+      let landingPos;
+      if (targetPoint) {
+        landingPos = clampPointToLake(targetPoint.x, targetPoint.z);
+      } else {
+        // Arremessa à frente do jogador em direção ao centro do lago
+        const toLake = new THREE.Vector3().subVectors(LAKE_CENTER, player.position).normalize();
+        const rawTarget = player.position.clone().addScaledVector(toLake, 8.5);
+        rawTarget.x += (Math.random() - 0.5) * 3.0;
+        rawTarget.z += (Math.random() - 0.5) * 3.0;
+        landingPos = clampPointToLake(rawTarget.x, rawTarget.z);
+      }
+
+      // Consome 1 unidade do estoque
+      gameState.inventory[breadItem.id]--;
+      gameState.breadsThrown++;
+      updateHotbarUI();
+      updateTopStatsUI();
+
+      // Vira o jogador para o alvo e anima o braço
+      const lookDir = new THREE.Vector3().subVectors(landingPos, player.position);
+      player.rotationY = Math.atan2(lookDir.x, lookDir.z);
+      player.throwAnimTimer = 0.35;
+
+      sounds.playThrow();
+
+      const startPos = player.position.clone().add(new THREE.Vector3(0, 1.45, 0));
+      const mesh = createBread3DMesh(breadItem);
+      mesh.position.copy(startPos);
+
+      activeBreads.push({
+        item: breadItem,
+        mesh,
+        startPos,
+        endPos: landingPos,
+        flightTime: 0,
+        flightDuration: 0.68,
+        landed: false,
+        eaten: false,
+        lifeTime: 0
+      });
+    }
+
+    function updateBreadsAndDucks(dt, elapsedTime) {
+      // 1. Atualiza pães em voo e flutuando
+      for (let i = activeBreads.length - 1; i >= 0; i--) {
+        const b = activeBreads[i];
+        if (!b.landed) {
+          b.flightTime += dt;
+          const t = Math.min(1, b.flightTime / b.flightDuration);
+          b.mesh.position.lerpVectors(b.startPos, b.endPos, t);
+          // Arco parabólico
+          b.mesh.position.y += Math.sin(t * Math.PI) * 3.2;
+          b.mesh.rotation.x += dt * 7;
+          b.mesh.rotation.z += dt * 5;
+
+          if (t >= 1) {
+            b.landed = true;
+            b.mesh.position.y = 0.08;
+            sounds.playSplash();
+            spawnWaterRipple(b.endPos, b.item.royal ? 0xfef08a : 0xffffff, 3.6);
+          }
+        } else {
+          // Flutuando suavemente na água
+          b.lifeTime += dt;
+          b.mesh.position.y = 0.08 + Math.sin(elapsedTime * 4 + i) * 0.03;
+          b.mesh.rotation.y += dt * 0.8;
+
+          if (b.lifeTime > 16 || b.eaten) {
+            scene.remove(b.mesh);
+            activeBreads.splice(i, 1);
+          }
+        }
+      }
+
+      // 2. Atualiza ondas na água
+      for (let i = waterRipples.length - 1; i >= 0; i--) {
+        const r = waterRipples[i];
+        r.age += dt;
+        const p = r.age / r.duration;
+        if (p >= 1) {
+          scene.remove(r.mesh);
+          waterRipples.splice(i, 1);
+        } else {
+          const sc = 1 + p * r.maxScale;
+          r.mesh.scale.set(sc, sc, 1);
+          r.mesh.material.opacity = (1 - p) * 0.8;
+        }
+      }
+
+      // 3. Atualiza IA e animações dos patos
+      ducks.forEach(duck => {
+        // Procura pão disponível na água mais próximo
+        let closestBread = null;
+        let closestDist = 18.0;
+
+        for (const b of activeBreads) {
+          if (b.landed && !b.eaten) {
+            const dist = duck.position.distanceTo(b.endPos);
+            if (dist < closestDist) {
+              closestDist = dist;
+              closestBread = b;
+            }
+          }
+        }
+
+        let moveSpeed = duck.spec.speed;
+        if (closestBread) {
+          duck.targetPos.copy(closestBread.endPos);
+          moveSpeed *= 1.65; // Nada mais rápido quando vê pão!
+
+          // Come o pão ao chegar perto
+          if (closestDist < 0.95) {
+            closestBread.eaten = true;
+            onDuckEatBread(duck, closestBread.item);
+          }
+        } else {
+          // Passeio tranquilo pelo lago
+          duck.wanderTimer -= dt;
+          if (duck.wanderTimer <= 0 || duck.position.distanceTo(duck.targetPos) < 0.8) {
+            duck.wanderTimer = 2.5 + Math.random() * 4.0;
+            const ang = Math.random() * Math.PI * 2;
+            const rad = 2.0 + Math.random() * 11.5;
+            duck.targetPos.set(
+              LAKE_CENTER.x + Math.cos(ang) * rad,
+              0.03,
+              LAKE_CENTER.z + Math.sin(ang) * rad * 0.78
+            );
+          }
+        }
+
+        // Movimento suave em direção ao targetPos
+        const dir = new THREE.Vector3().subVectors(duck.targetPos, duck.position);
+        dir.y = 0;
+        const distToTarget = dir.length();
+        if (distToTarget > 0.08) {
+          dir.normalize();
+          duck.position.addScaledVector(dir, Math.min(distToTarget, moveSpeed * dt));
+
+          // Rotação suave
+          const desiredAngle = Math.atan2(dir.x, dir.z);
+          let diff = desiredAngle - duck.mesh.rotation.y;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          duck.mesh.rotation.y += diff * Math.min(1, dt * 6);
+        }
+
+        // Balanço na água e animação das asas/cabeça
+        const bob = Math.sin(elapsedTime * 3.5 + duck.bobOffset) * 0.035;
+        duck.mesh.position.set(duck.position.x, 0.03 + bob, duck.position.z);
+
+        if (duck.excitedTimer > 0) {
+          duck.excitedTimer -= dt;
+          const flap = Math.sin(elapsedTime * 22) * 0.55;
+          duck.leftWing.rotation.z = flap;
+          duck.rightWing.rotation.z = -flap;
+          duck.headGroup.position.y = (0.68 * duck.spec.scale) + Math.abs(Math.sin(elapsedTime * 14)) * 0.12;
+        } else {
+          duck.leftWing.rotation.z = 0;
+          duck.rightWing.rotation.z = 0;
+          duck.headGroup.position.y = 0.68 * duck.spec.scale;
+        }
+      });
+    }
+
+    function onDuckEatBread(duck, breadItem) {
+      // Calcula alteração de alegria levando em conta a exigência da espécie
+      let delta = breadItem.happinessDelta;
+      if (delta > 0) {
+        delta = Math.round(delta / duck.spec.pickiness);
+      } else {
+        delta = Math.round(delta * duck.spec.pickiness);
+      }
+
+      duck.happiness = Math.max(0, Math.min(100, duck.happiness + delta));
+      duck.excitedTimer = 1.4;
+
+      const emoji = getDuckReactionEmoji(duck.happiness, breadItem);
+      const deltaLabel = delta >= 0 ? `+${delta}% Alegria` : `${delta}% Alegria`;
+
+      spawnFloatingEmoji(duck.position, emoji, `${duck.name} (${deltaLabel})`);
+      spawnWaterRipple(duck.position, delta >= 0 ? 0xfef08a : 0x84cc16, 2.4);
+
+      if (breadItem.id === 'rotten' || delta < 0) {
+        sounds.playDisgust();
+      } else if (duck.happiness >= 85 || breadItem.royal) {
+        sounds.playEuphoria();
+        sounds.playQuack(duck.happiness);
+      } else {
+        sounds.playQuack(duck.happiness);
+      }
+
+      updateTopStatsUI();
+      if (!document.getElementById('ducks-modal').classList.contains('hidden')) {
+        renderDucksStatusModal();
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 9. MOVIMENTO DO JOGADOR E INTERAÇÃO COM O PARQUE
+    // --------------------------------------------------------------------------
+    const keysPressed = {};
+    const mobileDirState = { up: false, down: false, left: false, right: false };
+
+    function updatePlayer(dt, elapsedTime) {
+      if (gameState.isModalOpen) return;
+
+      let moveForward = 0;
+      let moveRight = 0;
+
+      if (keysPressed['KeyW'] || keysPressed['ArrowUp'] || mobileDirState.up) moveForward += 1;
+      if (keysPressed['KeyS'] || keysPressed['ArrowDown'] || mobileDirState.down) moveForward -= 1;
+      if (keysPressed['KeyA'] || keysPressed['ArrowLeft'] || mobileDirState.left) moveRight -= 1;
+      if (keysPressed['KeyD'] || keysPressed['ArrowRight'] || mobileDirState.right) moveRight += 1;
+
+      if (moveForward !== 0 || moveRight !== 0) {
+        const forwardVec = new THREE.Vector3(-Math.sin(camState.yaw), 0, -Math.cos(camState.yaw));
+        const rightVec = new THREE.Vector3(Math.cos(camState.yaw), 0, -Math.sin(camState.yaw));
+
+        const moveDir = new THREE.Vector3()
+          .addScaledVector(forwardVec, moveForward)
+          .addScaledVector(rightVec, moveRight)
+          .normalize();
+
+        const nextPos = player.position.clone().addScaledVector(moveDir, player.speed * dt);
+
+        // Permite subir no píer (x entre -1.6 e 1.6, z entre -1.8 e 4.2) mas impede cair fundo no lago
+        const onPier = Math.abs(nextPos.x) <= 1.65 && nextPos.z >= -1.9 && nextPos.z <= 4.3;
+        const inLake = isPointInsideLake(nextPos.x, nextPos.z);
+
+        // Limite externo do parque
+        const distFromOrigin = Math.hypot(nextPos.x, nextPos.z);
+
+        if ((!inLake || onPier) && distFromOrigin < 34) {
+          player.position.x = nextPos.x;
+          player.position.z = nextPos.z;
+          player.position.y = onPier ? 0.34 : 0.05;
+        }
+
+        // Rotação suave do personagem
+        const targetRot = Math.atan2(moveDir.x, moveDir.z);
+        let diff = targetRot - player.rotationY;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        player.rotationY += diff * Math.min(1, dt * 12);
+
+        // Animação de caminhada
+        player.walkCycle += dt * 12;
+        player.leftLeg.rotation.x = Math.sin(player.walkCycle) * 0.55;
+        player.rightLeg.rotation.x = -Math.sin(player.walkCycle) * 0.55;
+      } else {
+        player.leftLeg.rotation.x *= 0.85;
+        player.rightLeg.rotation.x *= 0.85;
+      }
+
+      // Animação do braço ao jogar pão
+      if (player.throwAnimTimer > 0) {
+        player.throwAnimTimer -= dt;
+        player.rightArm.rotation.x = -Math.PI * 0.75;
+      } else {
+        player.rightArm.rotation.x = -player.leftLeg.rotation.x * 0.6;
+      }
+
+      player.mesh.position.copy(player.position);
+      player.mesh.rotation.y = player.rotationY;
+
+      // Checa proximidade com a Padaria 3D
+      const distBakery = player.position.distanceTo(worldObjects.bakeryPos);
+      const promptEl = document.getElementById('bakery-proximity-prompt');
+      if (distBakery < 6.8) {
+        if (!gameState.nearBakery) {
+          gameState.nearBakery = true;
+          promptEl.classList.remove('hidden');
+        }
+      } else if (gameState.nearBakery) {
+        gameState.nearBakery = false;
+        promptEl.classList.add('hidden');
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 10. ECONOMIA PASSIVA (R$ 50 A CADA 10 SEGUNDOS) E UI
+    // --------------------------------------------------------------------------
+    function formatBRL(val) {
+      return `R$ ${val.toFixed(2).replace('.', ',')}`;
+    }
+
+    function updatePassiveIncome(dt) {
+      gameState.incomeTimer += dt;
+      if (gameState.incomeTimer >= gameState.incomeInterval) {
+        gameState.incomeTimer -= gameState.incomeInterval;
+        gameState.money += gameState.incomeAmount;
+        sounds.playCash();
+        triggerCashPopup(`+${formatBRL(gameState.incomeAmount)}`);
+        updateMoneyUI();
+        renderBakeryModal();
+      }
+
+      const remaining = Math.max(0, gameState.incomeInterval - gameState.incomeTimer);
+      const pct = Math.min(100, (gameState.incomeTimer / gameState.incomeInterval) * 100);
+      document.getElementById('income-timer-text').textContent = `${remaining.toFixed(1)}s`;
+      document.getElementById('income-progress-bar').style.width = `${pct}%`;
+    }
+
+    function triggerCashPopup(text) {
+      const anchor = document.getElementById('cash-popup-anchor');
+      const badge = document.createElement('div');
+      badge.className = 'cash-toast absolute right-0 font-display font-bold text-sm text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full shadow whitespace-nowrap';
+      badge.textContent = text;
+      anchor.appendChild(badge);
+      setTimeout(() => {
+        if (badge.parentNode) badge.parentNode.removeChild(badge);
+      }, 1800);
+    }
+
+    function updateMoneyUI() {
+      const formatted = formatBRL(gameState.money);
+      document.getElementById('money-display').textContent = formatted;
+      document.getElementById('modal-money-display').textContent = formatted;
+    }
+
+    function updateTopStatsUI() {
+      document.getElementById('breads-thrown-count').textContent = gameState.breadsThrown;
+      document.getElementById('duck-count-label').textContent = ducks.length;
+
+      if (ducks.length > 0) {
+        const avg = Math.round(ducks.reduce((acc, d) => acc + d.happiness, 0) / ducks.length);
+        const mood = getMoodDescriptor(avg);
+        document.getElementById('lake-mood-emoji').textContent = mood.emoji;
+        document.getElementById('lake-mood-label').textContent = `${mood.label} (${avg}%)`;
+      }
+    }
+
+    let messageTimeout = null;
+    function showGameMessage(msg) {
+      const box = document.getElementById('game-message-box');
+      const text = document.getElementById('game-message-text');
+      text.textContent = msg;
+      box.classList.remove('opacity-0', '-translate-y-2');
+      box.classList.add('opacity-100', 'translate-y-0');
+
+      clearTimeout(messageTimeout);
+      messageTimeout = setTimeout(() => {
+        box.classList.add('opacity-0', '-translate-y-2');
+        box.classList.remove('opacity-100', 'translate-y-0');
+      }, 2500);
+    }
+
+    function updateHotbarUI() {
+      const hotbar = document.getElementById('bread-hotbar');
+      hotbar.innerHTML = '';
+
+      BREAD_CATALOG.forEach(bread => {
+        const count = gameState.inventory[bread.id] || 0;
+        const isSelected = gameState.selectedBreadId === bread.id;
+
+        const btn = document.createElement('button');
+        btn.className = `btn-bouncy relative flex-1 flex flex-col items-center py-1.5 px-1 sm:px-2 rounded-xl border-2 cursor-pointer transition-all ${
+          isSelected
+            ? 'bg-amber-100 border-amber-500 shadow-md scale-[1.03]'
+            : 'bg-white/75 border-transparent hover:bg-white'
+        }`;
+
+        btn.innerHTML = `
+          <span class="absolute top-1 left-1.5 text-[10px] font-extrabold text-slate-400 hidden sm:inline">${bread.key}</span>
+          <span class="absolute -top-2 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full text-xs font-extrabold flex items-center justify-center shadow ${
+            count > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-300 text-slate-600'
+          }">${count}</span>
+          <span class="text-2xl sm:text-3xl leading-none my-0.5">${bread.icon}</span>
+          <span class="text-[10px] sm:text-xs font-extrabold text-slate-800 truncate max-w-[64px] sm:max-w-[96px]">${bread.name.split(' ')[0]} ${bread.id === 'french' ? 'Francês' : (bread.id === 'royal' ? 'Real' : (bread.id === 'rotten' ? 'Podre' : (bread.id === 'stale' ? 'Dormido' : '')))}</span>
+        `;
+
+        btn.addEventListener('click', () => {
+          gameState.selectedBreadId = bread.id;
+          updateHotbarUI();
+        });
+
+        hotbar.appendChild(btn);
+      });
+    }
+
+    function buyBread(breadId, quantity = 1) {
+      const item = BREAD_CATALOG.find(b => b.id === breadId);
+      if (!item) return;
+
+      const totalCost = item.price * quantity;
+      if (gameState.money < totalCost) {
+        showGameMessage(`Saldo insuficiente! Aguarde o bônus de R$ 50.`);
+        return;
+      }
+
+      gameState.money -= totalCost;
+      gameState.inventory[breadId] = (gameState.inventory[breadId] || 0) + quantity;
+      gameState.selectedBreadId = breadId;
+
+      sounds.playCash();
+      updateMoneyUI();
+      updateHotbarUI();
+      renderBakeryModal();
+    }
+
+    function renderBakeryModal() {
+      const list = document.getElementById('bakery-items-list');
+      list.innerHTML = '';
+
+      BREAD_CATALOG.forEach(item => {
+        const stock = gameState.inventory[item.id] || 0;
+        const canAfford1 = gameState.money >= item.price;
+        const canAfford3 = gameState.money >= item.price * 3;
+        const effectLabel = item.happinessDelta >= 0
+          ? `+${item.happinessDelta}% Alegria`
+          : `${item.happinessDelta}% Alegria`;
+
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-2xl p-3.5 sm:p-4 border-2 border-amber-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3.5">
+            <div class="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-3xl shrink-0">
+              ${item.icon}
+            </div>
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="font-display font-bold text-base sm:text-lg text-slate-900">${item.name}</h3>
+                <span class="text-[11px] font-extrabold px-2 py-0.5 rounded-full ${item.badgeColor}">${item.badge}</span>
+                <span class="text-xs font-extrabold ${item.happinessDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}">${effectLabel}</span>
+              </div>
+              <p class="text-xs text-slate-500 font-semibold mt-0.5">${item.subtitle}</p>
+              <div class="text-xs font-bold text-amber-800 mt-1">Na mochila: <span class="bg-amber-100 px-2 py-0.5 rounded-md font-extrabold">${stock} un.</span></div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+            <button data-buy="${item.id}" data-qty="1" ${!canAfford1 ? 'disabled' : ''} class="btn-bouncy px-3.5 py-2 rounded-xl font-display font-bold text-sm cursor-pointer ${
+              canAfford1
+                ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }">
+              Comprar 1 • R$ ${item.price}
+            </button>
+            <button data-buy="${item.id}" data-qty="3" ${!canAfford3 ? 'disabled' : ''} class="btn-bouncy px-3 py-2 rounded-xl font-display font-bold text-xs cursor-pointer ${
+              canAfford3
+                ? 'bg-amber-400 hover:bg-amber-500 text-amber-950 shadow'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            }">
+              +3 (R$ ${item.price * 3})
+            </button>
+          </div>
+        `;
+
+        list.appendChild(card);
+      });
+
+      list.querySelectorAll('button[data-buy]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-buy');
+          const qty = parseInt(btn.getAttribute('data-qty'), 10);
+          buyBread(id, qty);
+        });
+      });
+    }
+
+    function renderDucksStatusModal() {
+      const list = document.getElementById('ducks-status-list');
+      list.innerHTML = '';
+
+      ducks.forEach(duck => {
+        const mood = getMoodDescriptor(duck.happiness);
+        const barColor = duck.happiness <= 25
+          ? 'bg-red-500'
+          : (duck.happiness <= 50 ? 'bg-amber-400' : (duck.happiness <= 80 ? 'bg-sky-500' : 'bg-emerald-500'));
+
+        const row = document.createElement('div');
+        row.className = 'bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between gap-3';
+        row.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-sky-50 flex items-center justify-center text-2xl border border-sky-100">
+              ${mood.emoji}
+            </div>
+            <div>
+              <div class="font-display font-bold text-slate-900 text-sm sm:text-base">${duck.name}</div>
+              <div class="text-xs font-bold text-slate-500">${duck.spec.speciesName} ${duck.spec.crown ? '👑' : ''}</div>
+            </div>
+          </div>
+
+          <div class="w-36 sm:w-44">
+            <div class="flex justify-between text-xs font-extrabold mb-1">
+              <span class="${mood.color}">${mood.label}</span>
+              <span class="text-slate-700">${duck.happiness}%</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full ${barColor} rounded-full transition-all duration-300" style="width: ${duck.happiness}%;"></div>
+            </div>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+    }
+
+    function toggleModal(modalId, open) {
+      const modal = document.getElementById(modalId);
+      if (open) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        gameState.isModalOpen = true;
+        if (modalId === 'bakery-modal') renderBakeryModal();
+        if (modalId === 'ducks-modal') renderDucksStatusModal();
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        gameState.isModalOpen = false;
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 11. EVENTOS DE ENTRADA (TECLADO, MOUSE, RAYCAST NO LAGO E TOUCH)
+    // --------------------------------------------------------------------------
+    const raycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2();
+
+    function handleCanvasClick(clientX, clientY) {
+      if (gameState.isModalOpen) return;
+
+      pointerNDC.x = (clientX / window.innerWidth) * 2 - 1;
+      pointerNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(pointerNDC, camera);
+      if (worldObjects.waterMesh) {
+        const hits = raycaster.intersectObject(worldObjects.waterMesh);
+        if (hits.length > 0) {
+          throwBreadAt(hits[0].point);
+          return;
+        }
+      }
+      // Se clicar fora da água mas perto do lago, joga na direção do lago
+      throwBreadAt(null);
+    }
+
+    function setupEvents() {
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      window.addEventListener('keydown', e => {
+        keysPressed[e.code] = true;
+
+        if (e.code === 'Escape') {
+          toggleModal('bakery-modal', false);
+          toggleModal('ducks-modal', false);
+        }
+        if (e.code === 'KeyB') {
+          const isOpen = !document.getElementById('bakery-modal').classList.contains('hidden');
+          toggleModal('bakery-modal', !isOpen);
+        }
+        if (e.code === 'Space' && !gameState.isModalOpen) {
+          e.preventDefault();
+          throwBreadAt(null);
+        }
+        if (['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(e.code)) {
+          const idx = parseInt(e.code.replace('Digit', ''), 10) - 1;
+          if (BREAD_CATALOG[idx]) {
+            gameState.selectedBreadId = BREAD_CATALOG[idx].id;
+            updateHotbarUI();
+          }
+        }
+      });
+
+      window.addEventListener('keyup', e => {
+        keysPressed[e.code] = false;
+      });
+
+      // Mouse drag para girar câmera e click simples para jogar pão
+      canvas.addEventListener('mousedown', e => {
+        camState.isDragging = true;
+        camState.dragMoved = false;
+        camState.lastX = e.clientX;
+        camState.lastY = e.clientY;
+      });
+
+      window.addEventListener('mousemove', e => {
+        if (!camState.isDragging) return;
+        const dx = e.clientX - camState.lastX;
+        const dy = e.clientY - camState.lastY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) camState.dragMoved = true;
+
+        camState.yaw -= dx * 0.0065;
+        camState.pitch = Math.max(0.18, Math.min(1.15, camState.pitch + dy * 0.005));
+        camState.lastX = e.clientX;
+        camState.lastY = e.clientY;
+      });
+
+      window.addEventListener('mouseup', e => {
+        if (camState.isDragging && !camState.dragMoved && e.target === canvas) {
+          handleCanvasClick(e.clientX, e.clientY);
+        }
+        camState.isDragging = false;
+      });
+
+      canvas.addEventListener('wheel', e => {
+        camState.distance = Math.max(5.5, Math.min(19.0, camState.distance + e.deltaY * 0.008));
+      }, { passive: true });
+
+      // Touch no canvas (girar câmera ou tocar no lago)
+      let touchStartPos = null;
+      canvas.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+          touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false };
+          camState.lastX = e.touches[0].clientX;
+          camState.lastY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+
+      canvas.addEventListener('touchmove', e => {
+        if (e.touches.length === 1 && touchStartPos) {
+          const tx = e.touches[0].clientX;
+          const ty = e.touches[0].clientY;
+          const dx = tx - camState.lastX;
+          const dy = ty - camState.lastY;
+          if (Math.abs(tx - touchStartPos.x) > 8 || Math.abs(ty - touchStartPos.y) > 8) {
+            touchStartPos.moved = true;
+          }
+          camState.yaw -= dx * 0.007;
+          camState.pitch = Math.max(0.2, Math.min(1.15, camState.pitch + dy * 0.005));
+          camState.lastX = tx;
+          camState.lastY = ty;
+        }
+      }, { passive: true });
+
+      canvas.addEventListener('touchend', e => {
+        if (touchStartPos && !touchStartPos.moved) {
+          handleCanvasClick(touchStartPos.x, touchStartPos.y);
+        }
+        touchStartPos = null;
+      });
+
+      // Botões HUD e Modais
+      document.getElementById('btn-open-bakery').addEventListener('click', () => toggleModal('bakery-modal', true));
+      document.getElementById('btn-proximity-bakery').addEventListener('click', () => toggleModal('bakery-modal', true));
+      document.getElementById('btn-close-bakery').addEventListener('click', () => toggleModal('bakery-modal', false));
+      document.getElementById('btn-close-bakery-footer').addEventListener('click', () => toggleModal('bakery-modal', false));
+
+      document.getElementById('btn-open-ducks').addEventListener('click', () => toggleModal('ducks-modal', true));
+      document.getElementById('btn-close-ducks').addEventListener('click', () => toggleModal('ducks-modal', false));
+
+      document.getElementById('btn-toggle-sound').addEventListener('click', e => {
+        gameState.soundEnabled = !gameState.soundEnabled;
+        e.currentTarget.textContent = gameState.soundEnabled ? '🔊' : '🔇';
+        if (gameState.soundEnabled) sounds.playQuack(70);
+      });
+
+      document.getElementById('btn-mobile-throw').addEventListener('click', () => throwBreadAt(null));
+
+      document.querySelectorAll('.mobile-dir-btn').forEach(btn => {
+        const dir = btn.getAttribute('data-dir');
+        const setDir = val => { mobileDirState[dir] = val; };
+        btn.addEventListener('mousedown', () => setDir(true));
+        btn.addEventListener('mouseup', () => setDir(false));
+        btn.addEventListener('mouseleave', () => setDir(false));
+        btn.addEventListener('touchstart', e => { e.preventDefault(); setDir(true); });
+        btn.addEventListener('touchend', e => { e.preventDefault(); setDir(false); });
+      });
+    }
+
+    // --------------------------------------------------------------------------
+    // 12. LOOP PRINCIPAL DE ANIMAÇÃO
+    // --------------------------------------------------------------------------
+    let lastTime = performance.now();
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+      const elapsedTime = now / 1000;
+
+      // Atualiza renda passiva (R$ 50 a cada 10s)
+      updatePassiveIncome(dt);
+
+      // Atualiza jogador, câmera, patos e pães
+      updatePlayer(dt, elapsedTime);
+      updateCamera(dt);
+      updateBreadsAndDucks(dt, elapsedTime);
+
+      // Animação suave das nuvens e brilho da água
+      worldObjects.clouds.forEach((c, idx) => {
+        c.position.x += dt * (0.45 + (idx % 3) * 0.15);
+        if (c.position.x > 65) c.position.x = -65;
+      });
+
+      if (worldObjects.waterMesh) {
+        worldObjects.waterMesh.material.emissiveIntensity = 0.2 + Math.sin(elapsedTime * 1.8) * 0.05;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function () {
+      buildEnvironment();
+      buildPlayer();
+      spawnDucks();
+      setupEvents();
+      updateMoneyUI();
+      updateHotbarUI();
+      updateTopStatsUI();
+      showGameMessage('Clique no lago para jogar pães ou visite a Padaria [B]! 🦆🥖');
+      lastTime = performance.now();
+      requestAnimationFrame(animate);
+    };
+  </script>
+</body>
+</html>

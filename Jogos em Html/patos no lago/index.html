@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Patos no Lago 3D</title>
+<style>
+:root{--bg:#9fd8ff;--fg:#1d2a1a;--card:rgba(255,252,242,.93);--acc:#e8892b;--ok:#2f8f4e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#9fd8ff;--fg:#1d2a1a}}
+:root[data-theme="dark"]{--bg:#9fd8ff;--fg:#1d2a1a}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+#c{position:fixed;inset:0}
+.top{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 0;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.pill{background:var(--card);color:var(--fg);border-radius:14px;padding:6px 16px;font-weight:700;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+#bar{width:150px;height:6px;background:#0002;border-radius:3px;margin-top:4px;overflow:hidden}
+#bar i{display:block;height:100%;width:0;background:var(--ok)}
+#msg{background:rgba(29,42,26,.88);color:#fff;border-radius:12px;padding:6px 14px;font-size:15px;max-width:340px;text-align:center;opacity:0;transition:opacity .25s}
+#msg.on{opacity:1}
+.dock{position:fixed;left:0;right:0;bottom:0;padding:0 8px calc(env(safe-area-inset-bottom,0px) + 8px);display:flex;flex-direction:column;align-items:center;gap:8px}
+#cards{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.cd{background:var(--card);color:var(--fg);border:3px solid transparent;border-radius:12px;padding:5px 7px;width:74px;text-align:center;font-size:12px;line-height:1.25;cursor:pointer}
+.cd.sel{border-color:var(--acc)}
+.ic{font-size:26px}
+.q{font-weight:700;font-size:14px}
+.by{display:none;font:inherit;font-weight:700;font-size:12px;background:var(--ok);color:#fff;border:0;border-radius:8px;padding:4px 6px;margin-top:3px;cursor:pointer}
+body.near .by{display:inline-block}
+#th{font:inherit;font-weight:800;font-size:20px;background:var(--acc);color:#2a1500;border:0;border-radius:14px;padding:12px 34px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.25)}
+button:focus-visible{outline:3px solid #1d6fd8;outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="c"></div>
+<div class="top"><div class="pill">R$ <span id="mo">60</span><div id="bar"><i id="bi"></i></div></div><div id="msg"></div></div>
+<div class="dock"><div id="cards"></div><button id="th">Jogar pão 🦆</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var B=[
+{n:'Pão podre',e:'🧫',p:5,v:-6,c:0x5a6b3a},
+{n:'Pão dormido',e:'🍞',p:10,v:-2,c:0xb8955a},
+{n:'Pão francês',e:'🥖',p:20,v:2,c:0xd9a24a},
+{n:'Pão integral',e:'🥯',p:40,v:3,c:0x8a5a2b},
+{n:'Croissant',e:'🥐',p:80,v:5,c:0xe8b04a},
+{n:'Brioche gourmet',e:'🧁',p:150,v:8,c:0xf2c36b}];
+var T=[
+{n:'Marreco comum',b:0x8a6a3c,h:0x2f6b3a,s:1},
+{n:'Pato branco',b:0xf4f4f0,h:0xf4f4f0,s:1},
+{n:'Pato mandarim',b:0xd9772b,h:0x2a8f8f,s:1.3},
+{n:'Pato rebelde',b:0x2a2a2e,h:0x17171a,s:.6},
+{n:'Pato dourado',b:0xe8c040,h:0xf2d56a,s:1,g:1}];
+function face(m){return m<=-7?'🤮':m<=-4?'🤢':m<=-1?'😠':m<=1?'😐':m<=4?'🙂':m<=7?'😄':m<=9?'😍':'🥰'}
+
+var scene=new THREE.Scene();scene.background=new THREE.Color(0x9fd8ff);scene.fog=new THREE.Fog(0x9fd8ff,40,90);
+var cam=new THREE.PerspectiveCamera(60,1,.1,200);
+var ren=new THREE.WebGLRenderer({antialias:true});ren.setPixelRatio(Math.min(devicePixelRatio,2));
+document.getElementById('c').appendChild(ren.domElement);
+function rs(){ren.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener('resize',rs);rs();
+scene.add(new THREE.HemisphereLight(0xffffff,0x6a8a50,.95));
+var dl=new THREE.DirectionalLight(0xfff2d0,.7);dl.position.set(10,20,8);scene.add(dl);
+
+function mat(c){return new THREE.MeshStandardMaterial({color:c,roughness:.85})}
+function add(g,c,x,y,z,p){var m=new THREE.Mesh(g,mat(c));m.position.set(x,y,z);(p||scene).add(m);return m}
+add(new THREE.PlaneGeometry(70,70).rotateX(-Math.PI/2),0x67b552,0,0,0);
+var lake=add(new THREE.CylinderGeometry(9,9,.1,48),0x2a86d0,0,.06,0);lake.material.transparent=true;lake.material.opacity=.9;
+var rim=add(new THREE.TorusGeometry(9.3,.35,6,48).rotateX(Math.PI/2),0xb9a27a,0,.15,0);
+// bakery
+add(new THREE.BoxGeometry(7,4,5),0xf0dcb0,-16,2,-12);
+var roof=add(new THREE.ConeGeometry(5.6,2.4,4),0xb23a2a,-16,5.2,-12);roof.rotation.y=Math.PI/4;
+add(new THREE.BoxGeometry(1.6,2.6,.2),0x6a3b1a,-16,1.3,-9.45);
+add(new THREE.BoxGeometry(2.6,1.2,.2),0x9fd8ff,-18.6+0,2.1,-9.45).position.x=-13.4;
+function tex(draw,w,h){var c=document.createElement('canvas');c.width=w;c.height=h;var x=c.getContext('2d');draw(x);return new THREE.CanvasTexture(c)}
+var sign=new THREE.Sprite(new THREE.SpriteMaterial({map:tex(function(x){x.fillStyle='#7a3b12';x.fillRect(0,0,512,128);x.fillStyle='#fff';x.font='bold 70px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText('🥖 Padaria',256,68)},512,128)}));
+sign.scale.set(5,1.25,1);sign.position.set(-16,7.2,-9.4);scene.add(sign);
+// trees
+[[-22,-2],[-24,10],[22,-14],[24,0],[20,16],[-6,-24],[8,-22],[-14,20],[14,24],[26,12],[-26,-22],[0,26]].forEach(function(p){
+add(new THREE.CylinderGeometry(.35,.45,2.4,6),0x6b4a2a,p[0],1.2,p[1]);
+add(new THREE.ConeGeometry(2,4.4,8),0x2f7a3a,p[0],4.4,p[1]);});
+// player
+var pl=new THREE.Group();scene.add(pl);
+add(new THREE.CylinderGeometry(.45,.5,1.1,12),0xe8892b,0,.7,0,pl);
+add(new THREE.SphereGeometry(.4,16,12),0xf2c9a0,0,1.55,0,pl);
+add(new THREE.CylinderGeometry(.45,.45,.12,12),0x2f6bd8,0,1.9,0,pl);
+pl.position.set(0,0,16);
+// ducks
+var ducks=[];
+[0,0,1,1,2,3,4,0].forEach(function(ti,i){
+  var t=T[ti],g=new THREE.Group();
+  var b=add(new THREE.SphereGeometry(.7,16,12),t.b,0,.4,0,g);b.scale.set(1,.7,1.3);
+  add(new THREE.SphereGeometry(.35,14,10),t.h,0,.95,.8,g);
+  add(new THREE.BoxGeometry(.28,.1,.34),0xff9a1a,0,.9,1.2,g);
+  var a=Math.random()*6.28,r=2+Math.random()*5;g.position.set(Math.cos(a)*r,.1,Math.sin(a)*r);scene.add(g);
+  ducks.push({g:g,t:t,m:0,tx:g.position.x,tz:g.position.z,ph:Math.random()*6,eat:0});
+});
+// state
+var money=60,acc=0,sel=2,inv=B.map(function(){return 0}),fx=[],shots=[],vel={x:0,z:0},keys={},inp={x:0,z:0},ts=null;
+var $=function(i){return document.getElementById(i)},mt=0;
+function msg(t,d){var m=$('msg');m.textContent=t;m.className='on';clearTimeout(mt);mt=setTimeout(function(){m.className=''},d||2600)}
+var cards=$('cards');
+B.forEach(function(b,i){
+  var d=document.createElement('div');d.className='cd';
+  d.innerHTML='<div class="ic">'+b.e+'</div><div>'+b.n+'</div><div class="q" id="q'+i+'">0</div><button class="by">R$ '+b.p+'</button>';
+  d.addEventListener('click',function(){sel=i;ui()});
+  d.querySelector('.by').addEventListener('click',function(e){
+    e.stopPropagation();
+    if(money<b.p){msg('Dinheiro insuficiente para '+b.n+'.');return}
+    money-=b.p;inv[i]++;sel=i;ui();
+  });
+  cards.appendChild(d);
+});
+function ui(){
+  $('mo').textContent=money;
+  B.forEach(function(b,i){$('q'+i).textContent=inv[i];cards.children[i].className='cd'+(i===sel?' sel':'')});
+}
+ui();
+
+function emoji(d,e){
+  var s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex(function(x){x.font='96px serif';x.textAlign='center';x.textBaseline='middle';x.fillText(e,64,70)},128,128),transparent:true,depthTest:false}));
+  s.scale.set(2.2,2.2,1);s.position.set(d.g.position.x,2.2,d.g.position.z);scene.add(s);fx.push({s:s,d:d,t:0});
+}
+function react(d,b){
+  var t=d.t,v=b.v,gain=v*t.s;
+  if(t.g)gain=v>=5?v*1.3:(v>0?v*.3:v*1.5);
+  d.m=Math.max(-10,Math.min(10,d.m+gain));d.eat=1;
+  var e=face(d.m);emoji(d,e);msg(t.n+': '+e+' ('+b.n+')');
+}
+function throwBread(){
+  if(inv[sel]<=0){msg('Você não tem '+B[sel].n+'. Compre na padaria 🥖');return}
+  var best=null,bd=1e9;
+  ducks.forEach(function(d){var q=Math.hypot(d.g.position.x-pl.position.x,d.g.position.z-pl.position.z);if(q<bd){bd=q;best=d}});
+  if(bd>22){msg('Chegue mais perto do lago.');return}
+  inv[sel]--;ui();
+  var m=new THREE.Mesh(new THREE.SphereGeometry(.25,10,8),mat(B[sel].c));scene.add(m);
+  shots.push({m:m,d:best,b:B[sel],t:0,x0:pl.position.x,z0:pl.position.z});
+}
+$('th').addEventListener('click',throwBread);
+addEventListener('keydown',function(e){keys[e.code]=true;if(e.code==='Space'||e.code==='KeyE'){throwBread();e.preventDefault()}});
+addEventListener('keyup',function(e){keys[e.code]=false});
+addEventListener('pointerdown',function(e){if(e.target===ren.domElement)ts={x:e.clientX,y:e.clientY}});
+addEventListener('pointermove',function(e){
+  if(!ts)return;var dx=(e.clientX-ts.x)/50,dy=(e.clientY-ts.y)/50,l=Math.hypot(dx,dy);
+  if(l>1){dx/=l;dy/=l}inp.x=dx;inp.z=dy;
+});
+function endT(){ts=null;inp.x=0;inp.z=0}
+addEventListener('pointerup',endT);addEventListener('pointercancel',endT);
+
+function blocked(x,z){return Math.hypot(x,z)<10||(Math.abs(x+16)<4.2&&Math.abs(z+12)<3.2)}
+var clock=new THREE.Clock(),ct=new THREE.Vector3(),near=false;
+msg('Vá até a padaria 🥖, compre pão e jogue para os patos! Ganhe R$ 50 a cada 10 s.',6500);
+function loop(){
+  requestAnimationFrame(loop);
+  var dt=Math.min(clock.getDelta(),.05),tm=clock.elapsedTime;
+  acc+=dt;if(acc>=10){acc-=10;money+=50;ui();msg('+R$ 50 🤑',1800)}
+  $('bi').style.width=(acc*10)+'%';
+  var kx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+  var kz=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);
+  var ix=kx||inp.x,iz=kz||inp.z,l=Math.hypot(ix,iz);if(l>1){ix/=l;iz/=l}
+  var k=1-Math.exp(-9*dt);vel.x+=(ix*7-vel.x)*k;vel.z+=(iz*7-vel.z)*k;
+  var nx=pl.position.x+vel.x*dt,nz=pl.position.z+vel.z*dt;
+  if(!blocked(nx,pl.position.z))pl.position.x=Math.max(-27,Math.min(27,nx));
+  if(!blocked(pl.position.x,nz))pl.position.z=Math.max(-27,Math.min(27,nz));
+  if(Math.hypot(vel.x,vel.z)>.5){pl.rotation.y=Math.atan2(vel.x,vel.z);pl.position.y=Math.abs(Math.sin(tm*12))*.08}else pl.position.y=0;
+  var n=Math.hypot(pl.position.x+16,pl.position.z+9.5)<6;
+  if(n!==near){near=n;document.body.classList.toggle('near',n);if(n)msg('Padaria 🥖: toque em Comprar nos pães.')}
+  ducks.forEach(function(d){
+    var p=d.g.position,dx=d.tx-p.x,dz=d.tz-p.z,dd=Math.hypot(dx,dz);
+    if(dd<.5){var a=Math.random()*6.28,r=Math.random()*7.5;d.tx=Math.cos(a)*r;d.tz=Math.sin(a)*r}
+    else{p.x+=dx/dd*1.3*dt;p.z+=dz/dd*1.3*dt;d.g.rotation.y=Math.atan2(dx,dz)}
+    p.y=.1+Math.sin(tm*2+d.ph)*.04;
+    d.eat=Math.max(0,d.eat-dt*1.5);d.g.scale.setScalar(1+Math.sin(d.eat*12)*.12*d.eat);
+    d.m+=(0-d.m)*.02*dt;
+  });
+  for(var i=shots.length-1;i>=0;i--){
+    var s=shots[i];s.t+=dt/.9;var u=Math.min(s.t,1),dp=s.d.g.position;
+    s.m.position.set(s.x0+(dp.x-s.x0)*u,1.3+(.4-1.3)*u+4*u*(1-u)*3,s.z0+(dp.z-s.z0)*u);
+    if(s.t>=1){scene.remove(s.m);react(s.d,s.b);shots.splice(i,1)}
+  }
+  for(var j=fx.length-1;j>=0;j--){
+    var f=fx[j];f.t+=dt;f.s.position.set(f.d.g.position.x,2.2+f.t*1.1,f.d.g.position.z);
+    f.s.material.opacity=Math.max(0,1-f.t/1.9);
+    if(f.t>1.9){scene.remove(f.s);fx.splice(j,1)}
+  }
+  ct.set(pl.position.x,11,pl.position.z+13);cam.position.lerp(ct,1-Math.exp(-5*dt));
+  cam.lookAt(pl.position.x,0,pl.position.z-2);
+  ren.render(scene,cam);
+}
+loop();
+})();
+</script>
+</body>
+</html>

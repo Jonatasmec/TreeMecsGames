@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orb Rush 3D</title>
+<style>
+:root{--bg:#0a0f1f;--fg:#eef4ff;--accent:#ffd23f;--cyan:#2de2e6;--red:#ff4d5e;--card:rgba(10,15,31,.82);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a0f1f;--fg:#eef4ff}}
+:root[data-theme="dark"]{--bg:#0a0f1f;--fg:#eef4ff}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+#c{position:fixed;inset:0}
+#hud{position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 0;pointer-events:none;font-size:20px;font-weight:700}
+#hud b{color:var(--accent);font-size:30px}
+#ov{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,8,18,.55)}
+#ov.h{display:none}
+.card{background:var(--card);border:2px solid var(--cyan);border-radius:18px;padding:26px 30px;max-width:340px;text-align:center}
+h1{margin:0 0 8px;font-size:34px;letter-spacing:.5px}
+p{margin:6px 0 16px;line-height:1.45;font-size:16px}
+button{font:inherit;font-weight:700;font-size:18px;background:var(--accent);color:#1a1400;border:0;border-radius:12px;padding:12px 30px;cursor:pointer}
+button:focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
+</style>
+</head>
+<body>
+<div id="c"></div>
+<div id="hud"><div>Orbes <b id="sc">0</b></div><div>Recorde <b id="bs">0</b></div></div>
+<div id="ov"><div class="card"><h1 id="t">Orb Rush 3D</h1><p id="m">Colete os orbes dourados e fuja dos cristais vermelhos. Use WASD ou as setas. No celular, arraste o dedo na tela.</p><button id="go">Jogar</button></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var R=20,PS=9,scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a0f1f);scene.fog=new THREE.Fog(0x0a0f1f,25,65);
+var cam=new THREE.PerspectiveCamera(60,1,.1,200);
+var ren=new THREE.WebGLRenderer({antialias:true});
+ren.setPixelRatio(Math.min(devicePixelRatio,2));
+document.getElementById('c').appendChild(ren.domElement);
+function rs(){ren.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener('resize',rs);rs();
+
+scene.add(new THREE.HemisphereLight(0xbfdcff,0x202040,.9));
+var dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(6,12,6);scene.add(dl);
+
+var floor=new THREE.Mesh(new THREE.CylinderGeometry(R,R,1,64),new THREE.MeshStandardMaterial({color:0x16213e,roughness:.85}));
+floor.position.y=-.5;scene.add(floor);
+var grid=new THREE.GridHelper(R*2,20,0x2de2e6,0x24407a);
+grid.position.y=.02;grid.material.transparent=true;grid.material.opacity=.3;scene.add(grid);
+var ring=new THREE.Mesh(new THREE.TorusGeometry(R,.22,8,96),new THREE.MeshBasicMaterial({color:0x2de2e6}));
+ring.rotation.x=Math.PI/2;scene.add(ring);
+
+var player=new THREE.Mesh(new THREE.SphereGeometry(.6,24,24),new THREE.MeshStandardMaterial({color:0x2de2e6,emissive:0x0a5a66,roughness:.3}));
+player.position.y=.6;scene.add(player);
+var orb=new THREE.Mesh(new THREE.OctahedronGeometry(.55),new THREE.MeshStandardMaterial({color:0xffd23f,emissive:0xaa7a00,roughness:.2}));
+scene.add(orb);
+var orbLight=new THREE.PointLight(0xffd23f,1.2,8);orb.add(orbLight);
+
+var enemies=[],vel=new THREE.Vector3(),inp={x:0,z:0},keys={};
+var state='ready',score=0,best=0,t0=0;
+try{best=+localStorage.getItem('orbrush-best')||0}catch(e){}
+var $=function(i){return document.getElementById(i)};
+$('bs').textContent=best;
+
+function rnd(minD){
+  for(var i=0;i<30;i++){
+    var a=Math.random()*6.283,r=Math.sqrt(Math.random())*(R-2);
+    var x=Math.cos(a)*r,z=Math.sin(a)*r;
+    if(Math.hypot(x-player.position.x,z-player.position.z)>=minD)return {x:x,z:z};
+  }
+  return {x:R-3,z:0};
+}
+function placeOrb(){var p=rnd(6);orb.position.set(p.x,.9,p.z)}
+function addEnemy(){
+  var m=new THREE.Mesh(new THREE.IcosahedronGeometry(.7),new THREE.MeshStandardMaterial({color:0xff4d5e,emissive:0x7a1020,flatShading:true}));
+  var p=rnd(10);m.position.set(p.x,.75,p.z);scene.add(m);enemies.push(m);
+}
+function reset(){
+  enemies.forEach(function(e){scene.remove(e)});enemies=[];
+  player.position.set(0,.6,0);vel.set(0,0,0);score=0;$('sc').textContent=0;
+  placeOrb();addEnemy();
+}
+function start(){reset();state='play';$('ov').className='h'}
+function over(){
+  state='over';
+  if(score>best){best=score;$('bs').textContent=best;try{localStorage.setItem('orbrush-best',best)}catch(e){}}
+  $('t').textContent='Fim de jogo';
+  $('m').textContent='Você coletou '+score+(score===1?' orbe.':' orbes.')+(score>=best&&score>0?' Novo recorde!':'')+' Tente de novo.';
+  $('go').textContent='Jogar de novo';$('ov').className='';
+}
+$('go').addEventListener('click',start);
+
+addEventListener('keydown',function(e){
+  keys[e.code]=true;
+  if(state!=='play'&&(e.code==='Enter'||e.code==='Space')){start();e.preventDefault()}
+});
+addEventListener('keyup',function(e){keys[e.code]=false});
+var ts=null;
+addEventListener('pointerdown',function(e){if(state==='play'&&e.target.tagName!=='BUTTON')ts={x:e.clientX,y:e.clientY}});
+addEventListener('pointermove',function(e){
+  if(!ts)return;
+  var dx=(e.clientX-ts.x)/50,dy=(e.clientY-ts.y)/50,l=Math.hypot(dx,dy);
+  if(l>1){dx/=l;dy/=l}
+  inp.x=dx;inp.z=dy;
+});
+function endT(){ts=null;inp.x=0;inp.z=0}
+addEventListener('pointerup',endT);addEventListener('pointercancel',endT);
+
+var clock=new THREE.Clock(),camT=new THREE.Vector3();
+function loop(){
+  requestAnimationFrame(loop);
+  var dt=Math.min(clock.getDelta(),.05),tm=clock.elapsedTime;
+  orb.rotation.y+=dt*2.5;orb.position.y=.9+Math.sin(tm*3)*.15;
+  if(state==='play'){
+    var kx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+    var kz=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);
+    var ix=kx||inp.x,iz=kz||inp.z,l=Math.hypot(ix,iz);
+    if(l>1){ix/=l;iz/=l}
+    var k=1-Math.exp(-8*dt);
+    vel.x+=(ix*PS-vel.x)*k;vel.z+=(iz*PS-vel.z)*k;
+    player.position.x+=vel.x*dt;player.position.z+=vel.z*dt;
+    var d=Math.hypot(player.position.x,player.position.z);
+    if(d>R-.6){player.position.x*=(R-.6)/d;player.position.z*=(R-.6)/d}
+    player.rotation.x+=vel.z*dt/.6;player.rotation.z-=vel.x*dt/.6;
+    var es=Math.min(3+score*.12,7);
+    for(var i=0;i<enemies.length;i++){
+      var e=enemies[i],dx=player.position.x-e.position.x,dz=player.position.z-e.position.z,dd=Math.hypot(dx,dz)||1;
+      e.position.x+=dx/dd*es*dt;e.position.z+=dz/dd*es*dt;
+      e.rotation.x+=dt*3;e.rotation.y+=dt*2;
+      if(dd<1.25){over();break}
+    }
+    if(state==='play'&&Math.hypot(player.position.x-orb.position.x,player.position.z-orb.position.z)<1.15){
+      score++;$('sc').textContent=score;placeOrb();
+      if(score%4===0&&enemies.length<7)addEnemy();
+    }
+  }
+  camT.set(player.position.x*.85,13,player.position.z*.85+11);
+  cam.position.lerp(camT,1-Math.exp(-5*dt));
+  cam.lookAt(player.position.x*.8,0,player.position.z*.8);
+  ren.render(scene,cam);
+}
+placeOrb();loop();
+})();
+</script>
+</body>
+</html>
